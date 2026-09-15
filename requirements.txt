@@ -1,0 +1,12 @@
+# Recommended Python version: 3.10 or 3.11
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+Pillow
+opencv-python
+tensorflow
+imbalanced-learn
+jupyter
+streamlit
