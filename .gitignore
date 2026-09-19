@@ -19,11 +19,17 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# Trained models and experiment outputs
+# Trained models and generated experiment outputs
 models/*
+results/generated/
 results/figures/*
 results/metrics/*
 results/confusion_matrices/*
+
+# Temporary dataset transfers and archives
+temp_combined_zip/
+temp_combined*/
+*.zip
 
 # Local tooling and operating-system files
 .vscode/
