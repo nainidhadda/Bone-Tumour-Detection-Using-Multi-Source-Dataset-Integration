@@ -2,44 +2,81 @@
 
 ## Project Objective
 
-This academic machine learning project investigates deep learning methods for detecting bone cancer from X-ray images. The project is intended for coursework and research experimentation.
+This academic machine learning project investigates deep learning methods for identifying cancer-associated patterns in bone X-ray images.
 
-## Current Scope
+The project is intended for coursework and research experimentation. The system is being developed as an AI-assisted screening and decision-support prototype rather than a clinical diagnostic system.
 
-The initial task is binary image classification with two classes:
+## Current ML Task
+
+The initial machine learning task is binary image classification:
 
 - Cancer/Tumor
 - Normal
 
-The dataset contains approximately 8,811 bone X-ray images and is organized into train, validation, and test folders. Dataset files are kept outside version control and must not be committed to Git.
+Two image datasets are being used:
 
-## Planned ML Workflow
+- BTXRD
+- Dataset 2
 
-The project will be developed incrementally over a 10-day college project timeline:
+The datasets are processed and standardized before being combined for model development.
 
-1. Data analysis and dataset inspection
-2. Image preprocessing
-3. Stratified sampling
-4. Class imbalance analysis and handling
-5. Image augmentation
-6. CNN baseline
-7. Transfer learning with ResNet50
-8. Transfer learning with EfficientNetB0
-9. Model comparison
-10. Grad-CAM explainability
-11. Streamlit deployment
+## Dataset Preparation
 
-SMOTE will only be considered later where technically appropriate for the data representation. No model training or experiment results are included in this initial setup.
+The current integrated dataset contains:
 
-## Project Structure
+| Split | Images |
+|---|---:|
+| Train | 10,052 |
+| Validation | 1,257 |
+| Test | 1,247 |
+| **Total** | **12,556** |
 
-- `data/`: local raw and processed datasets
-- `notebooks/`: ordered analysis and experiment notebooks
-- `src/`: planned reusable Python modules
-- `models/`: locally saved trained models
-- `results/`: locally generated figures, metrics, and confusion matrices
-- `app/`: planned Streamlit application
+All integrated images are standardized to:
 
-## Academic and Medical Disclaimer
+- Image size: `224 × 224`
+- Image format: PNG
 
-This project is for academic and research purposes only. It is not a medical diagnostic tool and must not be used to diagnose, treat, or make clinical decisions about any person.
+Metadata is maintained for the integrated dataset, including:
+
+- filename
+- cancer label
+- dataset source
+- split
+
+### Dataset Integrity Checks
+
+The preprocessing stage includes checks for:
+
+- Image dimensions and file formats
+- Missing images
+- Class distributions
+- Duplicate images between datasets
+- Duplicate images across dataset splits
+- Consistency between image files and metadata
+
+An important dataset limitation was identified during inspection: Dataset 2 contains duplicate images across its predefined train, validation, and test splits. This will be considered when designing the final evaluation methodology and reporting results.
+
+## Data Availability
+
+Raw and processed image datasets are intentionally excluded from Git version control.
+
+The datasets must be obtained separately and placed in the appropriate local directories.
+
+The preprocessing and integration code is maintained in the repository so that team members can reproduce the processed dataset locally.
+
+Expected final local structure:
+
+```text
+data/
+├── raw/
+└── processed/
+    └── combined/
+        ├── train/
+        │   ├── images/
+        │   └── metadata.csv
+        ├── valid/
+        │   ├── images/
+        │   └── metadata.csv
+        └── test/
+            ├── images/
+            └── metadata.csv
