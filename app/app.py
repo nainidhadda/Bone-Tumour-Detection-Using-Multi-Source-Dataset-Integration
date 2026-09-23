@@ -887,24 +887,61 @@ def render_clinical_report(case):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_ai_panel():
-    st.markdown(
-        f"""
-        <div class="analysis-block">
-            <div class="eyebrow">AI-assisted analysis</div>
-            <div class="analysis-label">Model status</div>
-            <div class="analysis-value">Not connected</div>
-            <div class="analysis-label">EfficientNet-B0</div>
-            <div class="analysis-value">Pending model integration</div>
-            <div class="analysis-label">ResNet50</div>
-            <div class="analysis-value">Pending model integration</div>
-            <div class="analysis-label">Third model</div>
-            <div class="analysis-value">Planned</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.caption("Model outputs will appear here once inference is connected.")
+def render_ai_panel(case):
+    prediction = case.get("ai_prediction")
+    confidence = case.get("ai_confidence")
+
+    if prediction:
+        confidence_percent = confidence * 100
+
+        st.markdown(
+            f"""
+            <div class="analysis-block">
+                <div class="eyebrow">AI-assisted analysis</div>
+
+                <div class="analysis-label">Model status</div>
+                <div class="analysis-value">Connected</div>
+
+                <div class="analysis-label">Model</div>
+                <div class="analysis-value">
+                    ResNet50 — RadImageNet
+                </div>
+
+                <div class="analysis-label">Prediction</div>
+                <div class="analysis-value">
+                    {prediction}
+                </div>
+
+                <div class="analysis-label">Confidence</div>
+                <div class="analysis-value">
+                    {confidence_percent:.2f}%
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.caption(
+            "AI output is intended to support professional review "
+            "and is not a medical diagnosis."
+        )
+
+    else:
+        st.markdown(
+            """
+            <div class="analysis-block">
+                <div class="eyebrow">AI-assisted analysis</div>
+                <div class="analysis-label">Model status</div>
+                <div class="analysis-value">Connected</div>
+                <div class="analysis-label">Model</div>
+                <div class="analysis-value">ResNet50 — RadImageNet</div>
+                <div class="analysis-label">Prediction</div>
+                <div class="analysis-value">Awaiting X-ray analysis</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+   
 
 
 def render_further_analysis(case):
