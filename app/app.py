@@ -408,24 +408,32 @@ def find_account(email):
 
 
 def case_timeline(case):
-    reviewed = case["status"] == "Reviewed"
-    rows = [
-        ("X-ray submitted", True),
-        ("AI-assisted analysis", True),
-        ("Doctor review", reviewed),
-        ("Doctor response", reviewed),
+    ai_completed = bool(case.get("ai_prediction"))
+
+    timeline_items = [
+        ("Case submitted", True),
+        ("X-ray available", bool(case.get("image_bytes"))),
+        ("AI-assisted analysis", ai_completed),
+        ("Doctor review", case.get("reviewed_by") is not None),
+        ("Clinical report", case.get("final_impression") is not None),
     ]
-    st.markdown(
-        '<div class="timeline">'
-        + "".join(
-            f'<div class="timeline-row {"done" if done else ""}">'
-            f'{"✓" if done else "○"} &nbsp;{label}'
-            f'{"<br><span class=\"muted\">Pending</span>" if not done else ""}</div>'
-            for label, done in rows
+
+    for label, completed in timeline_items:
+        status_class = "completed" if completed else "pending"
+        status_text = "Completed" if completed else "Pending"
+
+        st.markdown(
+            f"""
+            <div class="timeline-item">
+                <div class="timeline-dot {status_class}"></div>
+                <div class="timeline-content">
+                    <div class="timeline-label">{label}</div>
+                    <div class="timeline-status">{status_text}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        + "</div>",
-        unsafe_allow_html=True,
-    )
 
 
 def render_login():
@@ -898,17 +906,93 @@ def render_reviewed_cases():
 
 def render_clinical_report(case):
     st.markdown('<div class="report-sheet">', unsafe_allow_html=True)
-    st.markdown("<div class='eyebrow'>Bonewise</div><h1>Clinical review report</h1>", unsafe_allow_html=True)
-    st.markdown(f"**Client**  \n{case['client_name']}  \n\n**Case ID**  \n{case['client_id']}  \n\n**Study**  \n{case['body_location']} · {case['study_type']}  \n\n**Study date**  \n{case['submitted']}")
+
+    st.markdown(
+        "<div class='eyebrow'>Bonewise</div><h1>Clinical review report</h1>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"**Client**  \n{case['client_name']}  \n\n"
+        f"**Case ID**  \n{case['client_id']}  \n\n"
+        f"**Study**  \n{case['body_location']} · {case['study_type']}  \n\n"
+        f"**Study date**  \n{case['submitted']}"
+    )
+
     st.markdown("## Imaging")
     st.markdown("The reviewed X-ray is retained in the case workspace.")
+
     st.markdown("## AI-assisted analysis")
-    st.info("Model status: Not connected. No model output or prediction is available in this frontend prototype.")
-    st.markdown("EfficientNet-B0: **Pending model integration**  \nResNet50: **Pending model integration**  \nThird model: **Planned**")
-    st.markdown(f"## Doctor assessment\n{case['assessment'] or 'Not recorded'}\n\n## Clinical notes\n{case['comments'] or 'Not recorded'}")
-    st.markdown(f"## Final impression\n<div class='final-impression'>{case.get('final_impression') or case['assessment'] or 'Not recorded'}</div>", unsafe_allow_html=True)
-    st.markdown(f"## Recommendation\n{case.get('recommendation') or 'Not recorded'}")
-    st.markdown(f"## Review information\n**Reviewed by:** {case['reviewed_by']}  \n**Review date:** {case['review_date']}")
+
+    prediction = case.get("ai_prediction")
+    confidence = case.get("ai_confidence")
+
+    if prediction and confidence is not None:
+        confidence_percent = confidence * 100
+
+        st.markdown(
+            f"""
+            <div class="analysis-block">
+                <div class="eyebrow">Model output</div>
+
+                <div class="analysis-label">Model status</div>
+                <div class="analysis-value">Connected</div>
+
+                <div class="analysis-label">Model</div>
+                <div class="analysis-value">
+                    ResNet50 — RadImageNet
+                </div>
+
+                <div class="analysis-label">Prediction</div>
+                <div class="analysis-value">
+                    {prediction}
+                </div>
+
+                <div class="analysis-label">Confidence</div>
+                <div class="analysis-value">
+                    {confidence_percent:.2f}%
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.caption(
+            "AI output is intended to support professional review "
+            "and is not a medical diagnosis."
+        )
+
+    else:
+        st.info(
+            "No AI model output is available for this case."
+        )
+
+    st.markdown(
+        f"## Doctor assessment\n"
+        f"{case['assessment'] or 'Not recorded'}\n\n"
+        f"## Clinical notes\n"
+        f"{case['comments'] or 'Not recorded'}"
+    )
+
+    st.markdown(
+        f"## Final impression\n"
+        f"<div class='final-impression'>"
+        f"{case.get('final_impression') or case['assessment'] or 'Not recorded'}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"## Recommendation\n"
+        f"{case.get('recommendation') or 'Not recorded'}"
+    )
+
+    st.markdown(
+        f"## Review information\n"
+        f"**Reviewed by:** {case['reviewed_by']}  \n"
+        f"**Review date:** {case['review_date']}"
+    )
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -970,8 +1054,46 @@ def render_ai_panel(case):
 
 
 def render_further_analysis(case):
-    st.markdown("### Further analysis")
-    st.caption("Similar-case retrieval will be available after a model connection is added.")
+    prediction = case.get("ai_prediction")
+    confidence = case.get("ai_confidence")
+
+    st.markdown("## Further analysis")
+
+    if prediction and confidence is not None:
+        confidence_percent = confidence * 100
+
+        st.markdown(
+            f"""
+            <div class="analysis-block">
+                <div class="eyebrow">AI-assisted review context</div>
+
+                <div class="analysis-label">Current model output</div>
+                <div class="analysis-value">{prediction}</div>
+
+                <div class="analysis-label">Confidence</div>
+                <div class="analysis-value">{confidence_percent:.2f}%</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.caption(
+            "This model output is provided as research and decision-support "
+            "information for professional review. It is not a medical diagnosis."
+        )
+
+    else:
+        st.info(
+            "Further AI-assisted analysis will be available when an X-ray "
+            "has been processed by the model."
+        )
+
+    st.markdown("### Clinical review")
+
+    st.write(
+        "Use the model output together with the X-ray and other available "
+        "clinical information. Final interpretation remains with the reviewing clinician."
+    )
 
 
 def render_doctor_report_placeholder():
