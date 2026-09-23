@@ -405,7 +405,7 @@ def render_user():
                     "status": "Pending doctor review",
                     "image": None,
                     "image_bytes": upload.getvalue(),
-                    **mock_ai_analysis(),
+                   **ai_analysis(Image.open(upload)),
                     "assessment": None,
                     "comments": None,
                     "review_date": None,
