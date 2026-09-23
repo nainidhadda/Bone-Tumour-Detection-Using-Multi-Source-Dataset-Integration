@@ -60,9 +60,7 @@ def ensure_model_exists():
             MODEL_URL,
             MODEL_PATH
         )
-
-
-ensure_model_exists()
+ensure_model_esists()
 
 
 @st.cache_resource
