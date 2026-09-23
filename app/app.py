@@ -27,8 +27,10 @@ MODEL_TRANSFORM = transforms.Compose([
 
 @st.cache_resource
 def load_bonewise_model():
-    model = models.resnet50(weights=None)
+    if not MODEL_PATH.exists():
+        return None
 
+    model = models.resnet50(weights=None)
     model.fc = nn.Linear(2048, 2)
 
     checkpoint = torch.load(
@@ -41,8 +43,12 @@ def load_bonewise_model():
     model.eval()
 
     return model
+
 def predict_xray(image_bytes):
     model = load_bonewise_model()
+
+    if model is None:
+        return None
 
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     tensor = MODEL_TRANSFORM(image).unsqueeze(0).to(DEVICE)
@@ -293,84 +299,81 @@ def demo_image_path():
 
 
 def make_demo_cases():
-    return [
-        {
-            "id": "BW-2401",
-            "client_name": "Priya Shah",
-            "client_id": "BW-1042",
-            "age": 34,
-            "sex": "Female",
-            "body_location": "Left tibia",
-            "study_type": "AP view",
-            "date_added": "18 Sep 2026",
-            "imaging_status": "Study available",
-            "submitted": "21 Sep 2026",
-            "status": "Pending doctor review",
-            "image": demo_image_path(),
-            "image_bytes": None,
-            "assessment": None,
-            "comments": None,
-            "final_impression": None,
-            "recommendation": None,
-            "review_date": None,
-            "reviewed_by": None,
-        },
-        {
-            "id": "BW-2398",
-            "client_name": "Kavya Iyer",
-            "client_id": "BW-1035",
-            "age": 29,
-            "sex": "Female",
-            "body_location": "Left wrist",
-            "study_type": "AP view",
-            "date_added": "12 Sep 2026",
-            "imaging_status": "Study available",
-            "submitted": "19 Sep 2026",
-            "status": "Reviewed",
-            "image": None,
-            "image_bytes": None,
-            "assessment": "Further clinical correlation recommended",
-            "comments": "This is a demonstration response. Please discuss any concerns with a qualified professional.",
-            "final_impression": "Further clinical correlation recommended",
-            "recommendation": "Discuss with the treating clinician.",
-            "review_date": "20 Sep 2026",
-            "reviewed_by": "Dr. Meera Rao",
-        },
-        {
-            "id": "BW-2394",
-            "client_name": "Arjun Mehta",
-            "client_id": "BW-1039",
-            "age": 47,
-            "sex": "Male",
-            "body_location": "Right femur",
-            "study_type": "AP + lateral",
-            "date_added": "16 Sep 2026",
-            "imaging_status": "Study available",
-            "submitted": "16 Sep 2026",
-            "status": "Awaiting review",
-            "image": demo_image_path(),
-            "image_bytes": None,
-            "assessment": None,
-            "comments": None,
-            "final_impression": None,
-            "recommendation": None,
-            "review_date": None,
-            "reviewed_by": None,
-        },
-    ]
+    # Cases are created only when a logged-in user submits an X-ray.
+    return []
+
+
+STATUS_NEW = "NEW"
+STATUS_IN_REVIEW = "IN REVIEW"
+STATUS_REVIEWED = "REVIEWED"
+
+
+def normalize_case_status(status):
+    if status in {"Reviewed", STATUS_REVIEWED}:
+        return STATUS_REVIEWED
+    if status in {"Doctor Review", "In review", STATUS_IN_REVIEW}:
+        return STATUS_IN_REVIEW
+    return STATUS_NEW
+
+
+def normalize_cases():
+    for case in st.session_state.cases:
+        case["status"] = normalize_case_status(case.get("status"))
+
+
+def render_reset_cases(scope):
+    reset_key = f"reset-cases-{scope}"
+    confirm_key = f"confirm-reset-cases-{scope}"
+
+    if st.button("Reset cases", key=reset_key):
+        st.session_state[f"{reset_key}-confirm"] = True
+        st.rerun()
+
+    if st.session_state.get(f"{reset_key}-confirm", False):
+        st.warning("This removes all cases currently stored in this frontend session.")
+        confirmed = st.checkbox(
+            "I understand that all current cases will be cleared.",
+            key=confirm_key,
+        )
+        if st.button("Confirm reset", type="primary", key=f"{reset_key}-final"):
+            if confirmed:
+                st.session_state.cases = []
+                st.session_state.selected_case = None
+                st.session_state.selected_client = None
+                st.session_state.selected_report = None
+                st.session_state.open_user_case = None
+                st.session_state.review_success_case = None
+                st.session_state[f"{reset_key}-confirm"] = False
+                st.success("All cases have been cleared.")
+                st.rerun()
+            else:
+                st.error("Please confirm the reset first.")
 
 
 def initialize_state():
     if "cases" not in st.session_state:
         st.session_state.cases = make_demo_cases()
+    else:
+        # Remove legacy seeded/demo cases from an older frontend version.
+        st.session_state.cases = [
+            case for case in st.session_state.cases
+            if case.get("client_email")
+        ]
+    normalize_cases()
+    if "review_success_case" not in st.session_state:
+        st.session_state.review_success_case = None
     if "next_case_number" not in st.session_state:
-        st.session_state.next_case_number = 2402
+        st.session_state.next_case_number = 2401
+    if "next_patient_number" not in st.session_state:
+        st.session_state.next_patient_number = 1001
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     if "role" not in st.session_state:
         st.session_state.role = None
     if "user_name" not in st.session_state:
         st.session_state.user_name = None
+    if "user_email" not in st.session_state:
+        st.session_state.user_email = None
     if "selected_case" not in st.session_state:
         st.session_state.selected_case = None
     if "open_user_case" not in st.session_state:
@@ -394,6 +397,36 @@ def next_case_id():
     case_id = f"BW-{st.session_state.next_case_number}"
     st.session_state.next_case_number += 1
     return case_id
+
+
+def next_patient_id():
+    patient_id = f"P-{st.session_state.next_patient_number}"
+    st.session_state.next_patient_number += 1
+    return patient_id
+
+
+def get_user_cases():
+    email = (st.session_state.get("user_email") or "").strip().lower()
+    return [case for case in st.session_state.cases if case.get("client_email") == email]
+
+
+def get_patient_cases():
+    return [case for case in st.session_state.cases if case.get("patient_added")]
+
+
+def get_doctor_cases():
+    doctor_name = st.session_state.get("user_name")
+    return [
+        case for case in st.session_state.cases
+        if case.get("assigned_doctor") == doctor_name
+    ]
+
+
+def get_patient_id_for_email(email):
+    email = (email or "").strip().lower()
+    existing = next((case.get("patient_id") for case in st.session_state.cases
+                     if case.get("patient_added") and case.get("client_email") == email and case.get("patient_id")), None)
+    return existing
 
 
 def find_account(email):
@@ -464,6 +497,7 @@ def render_login():
                     st.session_state.authenticated = True
                     st.session_state.role = account["role"]
                     st.session_state.user_name = account["name"]
+                    st.session_state.user_email = email.strip().lower()
                     st.session_state.selected_case = None
                     st.session_state.open_user_case = None
                     st.rerun()
@@ -574,7 +608,7 @@ def render_case_row(case, show_open_for_user=False, key_prefix="row", row_index=
     with right:
         clicked = False
         if show_open_for_user:
-            if case["status"] == "Reviewed":
+            if case["status"] == STATUS_REVIEWED:
                 clicked = st.button("Open", key=f"{key_prefix}-{row_index}-{case['id']}")
         else:
             clicked = st.button("Open", key=f"{key_prefix}-{row_index}-{case['id']}")
@@ -583,31 +617,32 @@ def render_case_row(case, show_open_for_user=False, key_prefix="row", row_index=
 
 
 def render_user():
-    st.markdown('<div class="eyebrow">Bonewise / patient view</div>', unsafe_allow_html=True)
-    st.markdown("<h1 style='margin-top:4px'>Study status</h1>", unsafe_allow_html=True)
+    user_cases = get_user_cases()
+
+    st.markdown('<div class="eyebrow">Bonewise / patient portal</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-top:4px'>My studies</h1>", unsafe_allow_html=True)
     st.markdown(
-        '<p class="lede">View submitted studies and clinician review status.</p>',
+        '<p class="lede">Upload an X-ray and follow its clinical review status.</p>',
         unsafe_allow_html=True,
     )
     st.markdown('<div class="disclaimer">✦ &nbsp;' + DISCLAIMER + "</div>", unsafe_allow_html=True)
     st.markdown(f"### Good to see you, {st.session_state.user_name.split()[0]}")
 
-    pending = next((case for case in reversed(st.session_state.cases) if case["status"] != "Reviewed"), None)
-    if pending:
-        st.markdown('<div class="paper"><div class="eyebrow">Current case</div>', unsafe_allow_html=True)
-        st.markdown(f"### {pending['id']}")
-        st.markdown(f"<span class='muted'>Submitted {pending['submitted']}</span>", unsafe_allow_html=True)
-        case_timeline(pending)
-        st.info("Your case is waiting for professional review. You will see the doctor's response here once it's ready.")
+    current = next((case for case in reversed(user_cases) if case["status"] != STATUS_REVIEWED), None)
+    if current:
+        st.markdown('<div class="paper"><div class="eyebrow">Current study</div>', unsafe_allow_html=True)
+        st.markdown(f"### {current['id']}")
+        st.markdown(f"<span class='muted'>Submitted {current['submitted']}</span>", unsafe_allow_html=True)
+        case_timeline(current)
+        if current["status"] == STATUS_NEW:
+            st.info("Your study has been received and is waiting for clinical review.")
+        else:
+            st.info("Your study is currently being reviewed by a clinician.")
         st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.info("You do not have a case waiting for review.")
 
     st.markdown("## Submit an X-ray")
     st.caption("PNG, JPG, and JPEG files are supported.")
-
     uploader_key = f"xray-upload-{st.session_state.uploader_version}"
-
     upload = st.file_uploader(
         "Choose an X-ray image",
         type=["png", "jpg", "jpeg"],
@@ -616,75 +651,87 @@ def render_user():
     )
 
     if upload:
+        image_bytes = upload.getvalue()
+        upload_signature = __import__("hashlib").sha256(image_bytes).hexdigest()
+        already_submitted = any(
+            case.get("upload_signature") == upload_signature and case.get("client_email") == st.session_state.user_email
+            for case in st.session_state.cases
+        )
         st.image(upload, caption="Selected X-ray", width=420)
 
-        if st.button("Submit X-ray", type="primary", key="submit-xray"):
+        doctor_options = [info["name"] for info in DOCTOR_ACCOUNTS.values()]
+        selected_doctor = st.selectbox(
+            "Choose a doctor for clinical review",
+            doctor_options,
+            key="submit-doctor",
+        )
+
+        if already_submitted:
+            st.info("This X-ray has already been submitted as one of your studies.")
+        elif st.button("Submit X-ray", type="primary", key="submit-xray"):
             case_id = next_case_id()
-
-            image_bytes = upload.getvalue()
-
-            # Run the trained Bonewise model
             prediction = predict_xray(image_bytes)
-
-            st.session_state.cases.append(
-                {
-                    "id": case_id,
-                    "client_name": st.session_state.user_name,
-                    "client_id": case_id,
-                    "age": "Not recorded",
-                    "sex": "Not recorded",
-                    "body_location": "Not specified",
-                    "study_type": "Uploaded X-ray",
-                    "date_added": datetime.now().strftime("%d %b %Y"),
-                    "imaging_status": "Study available",
-                    "submitted": datetime.now().strftime("%d %b %Y"),
-                    "status": "Pending doctor review",
-                    "image": None,
-                    "image_bytes": image_bytes,
-                    "assessment": None,
-                    "comments": None,
-                    "final_impression": None,
-                    "recommendation": None,
-                    "review_date": None,
-                    "reviewed_by": None,
-
-                    # AI prediction
-                    "ai_prediction": prediction["label"],
-                    "ai_confidence": prediction["confidence"],
-                }
-            )
-
+            now = datetime.now().strftime("%d %b %Y")
+            st.session_state.cases.append({
+                "id": case_id,
+                "client_name": st.session_state.user_name,
+                "client_email": st.session_state.user_email,
+                "assigned_doctor": selected_doctor,
+                "client_id": case_id,
+                "patient_id": None,
+                "patient_added": False,
+                "age": "Not recorded",
+                "sex": "Not recorded",
+                "body_location": "Not specified",
+                "study_type": "Uploaded X-ray",
+                "date_added": now,
+                "imaging_status": "Study available",
+                "submitted": now,
+                "status": STATUS_NEW,
+                "image": None,
+                "image_bytes": image_bytes,
+                "upload_signature": upload_signature,
+                "assessment": None,
+                "comments": None,
+                "final_impression": None,
+                "recommendation": None,
+                "review_date": None,
+                "reviewed_by": None,
+                "ai_prediction": prediction.get("label") if prediction else None,
+                "ai_confidence": prediction.get("confidence") if prediction else None,
+            })
             st.session_state.uploader_version += 1
-
-            st.success(
-                f"Your X-ray has been received. Case ID: {case_id}. "
-                "You can track its status below."
-            )
-
+            st.success(f"Your X-ray has been sent to {selected_doctor} for clinical review. Case ID: {case_id}.")
             st.rerun()
 
-    st.markdown("## Previous cases")
-    other_cases = [case for case in reversed(st.session_state.cases) if not (pending and case["id"] == pending["id"])]
-    if not other_cases:
-        st.caption("No previous cases yet.")
-    for index, case in enumerate(other_cases):
+    st.markdown("## Previous studies")
+    previous = [case for case in reversed(user_cases) if not (current and case["id"] == current["id"])]
+    if not previous:
+        st.caption("No previous studies yet.")
+    for index, case in enumerate(previous):
         if render_case_row(case, show_open_for_user=True, key_prefix="open-user", row_index=index):
             st.session_state.open_user_case = case["id"]
             st.rerun()
 
     if st.session_state.open_user_case:
-        opened = next((case for case in st.session_state.cases if case["id"] == st.session_state.open_user_case), None)
+        opened = next((case for case in user_cases if case["id"] == st.session_state.open_user_case), None)
         if opened:
             st.markdown(f"### Case {opened['id']}")
-            render_doctor_report(opened)
+            if opened.get("status") == STATUS_REVIEWED:
+                render_clinical_report(opened)
+            else:
+                st.info("The clinician's report will appear here after the review is completed.")
             if st.button("Close", key="close-user-case"):
                 st.session_state.open_user_case = None
                 st.rerun()
 
     render_health()
 
-
 def render_doctor():
+    if st.session_state.get("review_success_case"):
+        st.success("Review submitted successfully.")
+        st.session_state.review_success_case = None
+
     if st.session_state.selected_case:
         render_case_review(st.session_state.selected_case)
         return
@@ -696,29 +743,36 @@ def render_doctor():
             st.session_state.selected_client = None
             st.session_state.selected_report = None
             st.rerun()
-        st.markdown('<div class="section-kicker">My clients</div>', unsafe_allow_html=True)
-        if st.button("All clients", key="doctor-nav-all-clients", width="stretch"):
-            st.session_state.doctor_section = "My Clients"
+
+        st.markdown('<div class="section-kicker">Patients</div>', unsafe_allow_html=True)
+        if st.button("All patients", key="doctor-nav-all-patients", width="stretch"):
+            st.session_state.doctor_section = "All Patients"
             st.session_state.selected_client = None
             st.rerun()
-        if st.button("New clients", key="doctor-nav-new-clients", width="stretch"):
-            st.session_state.doctor_section = "New Clients"
+        if st.button("New submissions", key="doctor-nav-new-submissions", width="stretch"):
+            st.session_state.doctor_section = "New Submissions"
             st.session_state.selected_client = None
             st.rerun()
-        st.markdown('<div class="section-kicker">Case review</div>', unsafe_allow_html=True)
-        if st.button("Review cases", key="doctor-nav-review-cases", width="stretch"):
-            st.session_state.doctor_section = "Review Cases"
+
+        st.markdown('<div class="section-kicker">Reviews</div>', unsafe_allow_html=True)
+        if st.button("In review", key="doctor-nav-in-review", width="stretch"):
+            st.session_state.doctor_section = "In Review"
             st.session_state.selected_report = None
             st.rerun()
-        if st.button("Reviewed cases", key="doctor-nav-reviewed-cases", width="stretch"):
+        if st.button("Reviewed", key="doctor-nav-reviewed", width="stretch"):
             st.session_state.doctor_section = "Reviewed Cases"
+            st.session_state.selected_report = None
             st.rerun()
+
         st.markdown('<div class="section-kicker">Account</div>', unsafe_allow_html=True)
         st.markdown(f"**{st.session_state.user_name}**<br><span class='muted'>Clinician</span>", unsafe_allow_html=True)
+        render_reset_cases("doctor")
+
         if st.button("Sign out", key="doctor-sign-out", width="stretch"):
             st.session_state.authenticated = False
             st.session_state.role = None
             st.session_state.user_name = None
+            st.session_state.user_email = None
             st.session_state.selected_case = None
             st.session_state.selected_client = None
             st.session_state.selected_report = None
@@ -729,45 +783,51 @@ def render_doctor():
         return
     if st.session_state.doctor_section == "Overview":
         render_doctor_overview()
-    elif st.session_state.doctor_section == "My Clients":
+    elif st.session_state.doctor_section == "All Patients":
         render_client_registry()
-    elif st.session_state.doctor_section == "New Clients":
+    elif st.session_state.doctor_section == "New Submissions":
         render_new_clients()
     elif st.session_state.doctor_section == "Reviewed Cases":
         render_reviewed_cases()
     else:
         render_review_queue()
 
-
 def render_doctor_overview():
-    cases = st.session_state.cases
-    open_cases = [case for case in cases if case["status"] != "Reviewed"]
-    reviewed_today = [case for case in cases if case.get("review_date") == datetime.now().strftime("%d %b %Y")]
-    clients = {case["client_id"] for case in cases}
+    cases = get_doctor_cases()
+    patient_cases = [case for case in cases if case.get("patient_added")]
+    new_submissions = [case for case in cases if not case.get("patient_added")]
+    in_review = [case for case in patient_cases if case["status"] == STATUS_IN_REVIEW]
+    reviewed_today = [case for case in patient_cases if case.get("review_date") == datetime.now().strftime("%d %b %Y")]
+    patients = {case.get("patient_id") for case in patient_cases if case.get("patient_id")}
+
     st.markdown('<div class="eyebrow">Bonewise / clinician overview</div>', unsafe_allow_html=True)
     st.markdown("<h1 style='margin-top:4px'>Clinical overview</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='lede'>Current patient and study activity for this review workspace.</p>", unsafe_allow_html=True)
+    st.markdown("<p class='lede'>New submissions, patient records, and active clinical reviews.</p>", unsafe_allow_html=True)
     st.markdown(
-        f'<div class="stat-row"><div class="stat-cell"><div class="stat-label">Active patients</div><div class="metric">{len(clients)}</div></div>'
-        f'<div class="stat-cell"><div class="stat-label">New cases</div><div class="metric">{sum(case["status"] == "Pending doctor review" for case in cases)}</div></div>'
-        f'<div class="stat-cell"><div class="stat-label">Awaiting review</div><div class="metric">{len(open_cases)}</div></div>'
+        f'<div class="stat-row"><div class="stat-cell"><div class="stat-label">Patients</div><div class="metric">{len(patients)}</div></div>'
+        f'<div class="stat-cell"><div class="stat-label">New submissions</div><div class="metric">{len(new_submissions)}</div></div>'
+        f'<div class="stat-cell"><div class="stat-label">In review</div><div class="metric">{len(in_review)}</div></div>'
         f'<div class="stat-cell"><div class="stat-label">Reviewed today</div><div class="metric">{len(reviewed_today)}</div></div></div>',
         unsafe_allow_html=True,
     )
-    st.markdown("### Recent studies")
+
+    st.markdown("### Recent submissions")
     recent = sorted(cases, key=lambda case: case["submitted"], reverse=True)[:5]
-    render_worklist_header(["Patient", "Study ID", "Region", "Study date", "Status", "Action"])
+    if not recent:
+        st.info("No submissions yet.")
+        return
+    render_worklist_header(["User", "Study ID", "Region", "Study date", "Status", "Action"])
     for index, case in enumerate(recent):
+        display_status = "NEW SUBMISSION" if not case.get("patient_added") else case["status"]
         st.markdown(
             f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case["id"]}</span>'
-            f'<span>{case["body_location"]}</span><span>{case["submitted"]}</span><span class="status-dot {"reviewed" if case["status"] == "Reviewed" else ""}">{case["status"]}</span><span></span></div>',
+            f'<span>{case["body_location"]}</span><span>{case["submitted"]}</span><span class="status-dot {"reviewed" if case["status"] == STATUS_REVIEWED else ""}">{display_status}</span><span></span></div>',
             unsafe_allow_html=True,
         )
         if st.button("Open", key=f"overview-open-{index}-{case['id']}"):
             st.session_state.selected_case = case["id"]
             st.rerun()
     render_worklist_footer()
-
 
 def render_worklist_header(columns):
     st.markdown(
@@ -783,24 +843,19 @@ def render_worklist_footer():
 
 
 def render_review_queue():
-    cases = [case for case in st.session_state.cases if case["status"] != "Reviewed"]
-    st.markdown('<div class="eyebrow">Case review / clinical queue</div>', unsafe_allow_html=True)
-    st.markdown("<h1 style='margin-top:4px'>Review cases</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='lede'>Cases requiring clinician attention. Open one case at a time for review.</p>", unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="stat-row"><div class="stat-cell"><div class="stat-label">Open cases</div><div class="metric">{len(cases)}</div></div>'
-        f'<div class="stat-cell"><div class="stat-label">Reviewed cases</div><div class="metric">{len(st.session_state.cases) - len(cases)}</div></div></div>',
-        unsafe_allow_html=True,
-    )
+    cases = [case for case in get_doctor_cases() if case.get("patient_added") and case["status"] == STATUS_IN_REVIEW]
+    st.markdown('<div class="eyebrow">Reviews / active cases</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-top:4px'>In review</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='lede'>Patient studies currently being reviewed by the clinical team.</p>", unsafe_allow_html=True)
     if not cases:
-        st.info("There are no cases waiting for review.")
+        st.info("No cases are currently being reviewed.")
         return
-    render_worklist_header(["Client", "Case ID", "Study", "Study date", "Status", "Action"])
+    render_worklist_header(["Patient", "Patient ID", "Study", "Study date", "Status", "Action"])
     for index, case in enumerate(cases):
         st.markdown(
-            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong><br><span class="muted">{case["age"]} · {case["sex"]}</span></span>'
-            f'<span class="case-id">{case["client_id"]}</span><span>{case["body_location"]}<br><span class="muted">{case["study_type"]}</span></span>'
-            f'<span>{case["submitted"]}</span><span class="status-dot">{case["status"]}</span><span></span></div>',
+            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case.get("patient_id") or "-"}</span>'
+            f'<span>{case["body_location"]}<br><span class="muted">{case["id"]}</span></span><span>{case["submitted"]}</span>'
+            f'<span class="status-dot">{case["status"]}</span><span></span></div>',
             unsafe_allow_html=True,
         )
         if st.button("Open review", key=f"review-queue-open-{index}-{case['id']}", type="primary"):
@@ -810,82 +865,85 @@ def render_review_queue():
 
 
 def render_client_registry():
-    query = st.text_input("Search clients", placeholder="Search by name or client ID", key="client-search")
-    clients = {}
-    for case in st.session_state.cases:
-        clients.setdefault(case["client_id"], case)
-    filtered = [case for case in clients.values() if query.lower() in f"{case['client_name']} {case['client_id']}".lower()]
-    st.markdown('<div class="eyebrow">My clients / registry</div>', unsafe_allow_html=True)
-    st.markdown("<h1 style='margin-top:4px'>My clients</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='lede'>Clients assigned to this clinical workspace and their latest available study.</p>", unsafe_allow_html=True)
+    query = st.text_input("Search patients", placeholder="Search by name or patient ID", key="client-search")
+    patients = {}
+    for case in get_doctor_cases():
+        if case.get("patient_added") and case.get("patient_id"):
+            patients.setdefault(case["patient_id"], case)
+    filtered = [case for case in patients.values() if query.lower() in f"{case['client_name']} {case['patient_id']}".lower()]
+
+    st.markdown('<div class="eyebrow">Patients / registry</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-top:4px'>All patients</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='lede'>Patients added to the clinical workspace by a doctor.</p>", unsafe_allow_html=True)
     if not filtered:
-        st.info("No clients match that search.")
+        st.info("No patients yet.")
         return
-    render_worklist_header(["Client", "Client ID", "Study", "Last study", "Status", "Action"])
+    render_worklist_header(["Patient", "Patient ID", "Latest study", "Last study", "Status", "Action"])
     for index, case in enumerate(filtered):
+        patient_cases = [c for c in get_doctor_cases() if c.get("patient_id") == case.get("patient_id")]
+        latest = max(patient_cases, key=lambda c: c["submitted"])
         st.markdown(
-            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case["client_id"]}</span>'
-            f'<span>{case["body_location"]}<br><span class="muted">{case["study_type"]}</span></span><span>{case["submitted"]}</span>'
-            f'<span class="status-dot {"reviewed" if case["status"] == "Reviewed" else ""}">{case["status"]}</span><span></span></div>',
+            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case["patient_id"]}</span>'
+            f'<span>{latest["body_location"]}<br><span class="muted">{latest["id"]}</span></span><span>{latest["submitted"]}</span>'
+            f'<span class="status-dot {"reviewed" if latest["status"] == STATUS_REVIEWED else ""}">{latest["status"]}</span><span></span></div>',
             unsafe_allow_html=True,
         )
-        if st.button("Open client", key=f"client-registry-open-{index}-{case['client_id']}"):
-            st.session_state.selected_client = case["client_id"]
+        if st.button("Open patient", key=f"patient-registry-open-{index}-{case['patient_id']}"):
+            st.session_state.selected_client = case["patient_id"]
             st.rerun()
     render_worklist_footer()
 
 
 def render_new_clients():
-    cases = [case for case in st.session_state.cases if case["status"] == "Pending doctor review"]
-    st.markdown('<div class="eyebrow">My clients / recent arrivals</div>', unsafe_allow_html=True)
-    st.markdown("<h1 style='margin-top:4px'>New clients</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='lede'>Recently added studies that have not yet received a clinical review.</p>", unsafe_allow_html=True)
+    cases = [case for case in get_doctor_cases() if not case.get("patient_added")]
+    st.markdown('<div class="eyebrow">New submissions</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-top:4px'>New submissions</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='lede'>Studies submitted by users that have not yet been added to a patient record.</p>", unsafe_allow_html=True)
     if not cases:
-        st.info("There are no new clients right now.")
+        st.info("No new submissions.")
         return
-    render_worklist_header(["Client", "Case ID", "Date added", "Imaging", "Review status", "Action"])
+    render_worklist_header(["User", "Study ID", "Region", "Date submitted", "Status", "Action"])
     for index, case in enumerate(cases):
         st.markdown(
-            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case["client_id"]}</span>'
-            f'<span>{case["date_added"]}</span><span>{case["imaging_status"]}</span><span class="status-dot">New</span><span></span></div>',
+            f'<div class="worklist-row"><span><strong>{case["client_name"]}</strong></span><span class="case-id">{case["id"]}</span>'
+            f'<span>{case["body_location"]}</span><span>{case["submitted"]}</span><span class="status-dot">NEW SUBMISSION</span><span></span></div>',
             unsafe_allow_html=True,
         )
-        if st.button("Open case", key=f"new-client-open-{index}-{case['id']}", type="primary"):
+        if st.button("Open submission", key=f"new-submission-open-{index}-{case['id']}", type="primary"):
             st.session_state.selected_case = case["id"]
             st.rerun()
     render_worklist_footer()
 
 
-def render_client_profile(client_id):
-    cases = [case for case in st.session_state.cases if case["client_id"] == client_id]
+def render_client_profile(patient_id):
+    cases = [case for case in get_doctor_cases() if case.get("patient_id") == patient_id and case.get("patient_added")]
     if not cases:
         st.session_state.selected_client = None
         return
     client = cases[0]
-    if st.button("← Back to clients", key="back-to-client-registry"):
+    if st.button("← Back to patients", key=f"back-to-client-registry-{patient_id}"):
         st.session_state.selected_client = None
         st.rerun()
-    st.markdown('<div class="eyebrow">My clients / profile</div>', unsafe_allow_html=True)
-    st.markdown(f"<h1 style='margin-top:4px'>{client['client_name']}</h1><span class='case-id'>{client['client_id']}</span>", unsafe_allow_html=True)
-    st.markdown(f"<p class='case-meta'>{client['age']} years · {client['sex']}</p>", unsafe_allow_html=True)
-    st.markdown("### Imaging and review history")
+    st.markdown('<div class="eyebrow">Patient profile</div>', unsafe_allow_html=True)
+    st.markdown(f"<h1 style='margin-top:4px'>{client['client_name']}</h1><span class='case-id'>{patient_id}</span>", unsafe_allow_html=True)
+    st.markdown(f"<p class='case-meta'>{client['age']} · {client['sex']}</p>", unsafe_allow_html=True)
+    st.markdown("### Studies")
     for index, case in enumerate(sorted(cases, key=lambda item: item["submitted"], reverse=True)):
         left, right = st.columns([5, 1])
         with left:
-            st.markdown(f'<div class="profile-row"><span><strong>{case["submitted"]}</strong><br>{case["body_location"]} · {case["study_type"]}</span><span class="status">{case["status"]}</span></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="profile-row"><span><strong>{case["id"]}</strong><br>{case["submitted"]} · {case["body_location"]} · {case["study_type"]}</span><span class="status">{case["status"]}</span></div>', unsafe_allow_html=True)
         with right:
             if st.button("Open", key=f"profile-study-open-{index}-{case['id']}"):
                 st.session_state.selected_case = case["id"]
                 st.rerun()
 
-
 def render_reviewed_cases():
-    cases = [case for case in st.session_state.cases if case["status"] == "Reviewed"]
+    cases = [case for case in get_doctor_cases() if case.get("patient_added") and case["status"] == STATUS_REVIEWED]
     st.markdown('<div class="eyebrow">Case review / completed records</div>', unsafe_allow_html=True)
     st.markdown("<h1 style='margin-top:4px'>Reviewed cases</h1>", unsafe_allow_html=True)
     st.markdown("<p class='lede'>Completed reviews and their clinical reports.</p>", unsafe_allow_html=True)
     if not cases:
-        st.info("No completed reviews yet.")
+        st.info("No reviewed cases yet.")
         return
     render_worklist_header(["Client", "Case ID", "Study", "Review date", "Reviewed by", "Status"])
     for index, case in enumerate(cases):
@@ -940,7 +998,7 @@ def render_clinical_report(case):
 
                 <div class="analysis-label">Model</div>
                 <div class="analysis-value">
-                    ResNet50 — RadImageNet
+                    ResNet50 + RadImageNet
                 </div>
 
                 <div class="analysis-label">Prediction</div>
@@ -963,9 +1021,7 @@ def render_clinical_report(case):
         )
 
     else:
-        st.info(
-            "No AI model output is available for this case."
-        )
+        st.info("AI prediction unavailable. Model checkpoint not found.")
 
     st.markdown(
         f"## Doctor assessment\n"
@@ -1000,57 +1056,23 @@ def render_ai_panel(case):
     prediction = case.get("ai_prediction")
     confidence = case.get("ai_confidence")
 
-    if prediction:
-        confidence_percent = confidence * 100
+    st.markdown("### AI screening")
 
+    if prediction and confidence is not None:
         st.markdown(
             f"""
             <div class="analysis-block">
-                <div class="eyebrow">AI-assisted analysis</div>
-
-                <div class="analysis-label">Model status</div>
-                <div class="analysis-value">Connected</div>
-
-                <div class="analysis-label">Model</div>
-                <div class="analysis-value">
-                    ResNet50 — RadImageNet
-                </div>
-
                 <div class="analysis-label">Prediction</div>
-                <div class="analysis-value">
-                    {prediction}
-                </div>
-
+                <div class="analysis-value">{prediction}</div>
                 <div class="analysis-label">Confidence</div>
-                <div class="analysis-value">
-                    {confidence_percent:.2f}%
-                </div>
+                <div class="analysis-value">{confidence * 100:.2f}%</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-
-        st.caption(
-            "AI output is intended to support professional review "
-            "and is not a medical diagnosis."
-        )
-
+        st.caption("AI output supports professional review and is not a diagnosis.")
     else:
-        st.markdown(
-            """
-            <div class="analysis-block">
-                <div class="eyebrow">AI-assisted analysis</div>
-                <div class="analysis-label">Model status</div>
-                <div class="analysis-value">Connected</div>
-                <div class="analysis-label">Model</div>
-                <div class="analysis-value">ResNet50 — RadImageNet</div>
-                <div class="analysis-label">Prediction</div>
-                <div class="analysis-value">Awaiting X-ray analysis</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-   
+        st.info("AI prediction unavailable. Model checkpoint not found.")
 
 
 def render_further_analysis(case):
@@ -1106,49 +1128,68 @@ def render_case_review(case_id):
         st.session_state.selected_case = None
         return
 
-    if st.button("← Back to review cases", key=f"back-to-review-{case_id}"):
+    if st.button("← Back", key=f"back-to-case-{case_id}"):
         st.session_state.selected_case = None
         st.rerun()
+
+    if not case.get("patient_added"):
+        st.markdown('<div class="eyebrow">New submission</div>', unsafe_allow_html=True)
+        st.markdown(f"<h1 style='margin-top:4px'>{case['client_name']}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<span class='case-id'>{case['id']}</span>", unsafe_allow_html=True)
+        st.markdown("### Submitted study")
+        st.write(f"Study date: {case['submitted']}")
+        st.write(f"Region: {case['body_location']}")
+        if case.get("image_bytes"):
+            st.image(case["image_bytes"], width="stretch")
+        st.markdown("### Patient record")
+        st.info("This submission has not been added to a patient record yet.")
+        if st.button("Add as patient", type="primary", key=f"add-patient-{case_id}"):
+            patient_id = get_patient_id_for_email(case.get("client_email")) or next_patient_id()
+            case["patient_id"] = patient_id
+            case["patient_added"] = True
+            case["status"] = STATUS_IN_REVIEW
+            st.session_state.selected_case = case_id
+            st.rerun()
+        return
 
     st.markdown(
         f'<div class="case-header"><div class="eyebrow">Clinical review workspace</div>'
         f'<h1 style="margin-top:4px">{case["client_name"]}</h1>'
-        f'<span class="case-id">{case["client_id"]} · Case {case["id"]}</span>'
-        f'<div class="case-meta">{case["age"]}{case["sex"][0]} · {case["body_location"]} · {case["study_type"]} · Study date: {case["submitted"]}</div>'
+        f'<span class="case-id">{case["patient_id"]} · {case["id"]}</span>'
+        f'<div class="case-meta">{case["age"]} · {case["sex"]} · {case["body_location"]} · {case["study_type"]} · Study date: {case["submitted"]}</div>'
         f'<div class="status">Status: {case["status"]}</div></div>',
         unsafe_allow_html=True,
     )
+
     left, right = st.columns([1.25, .9], gap="large")
     with left:
         st.markdown("### Imaging")
-        if case["image_bytes"]:
+        if case.get("image_bytes"):
             st.markdown('<div class="image-stage">', unsafe_allow_html=True)
             st.image(case["image_bytes"], width="stretch")
             st.markdown("</div>", unsafe_allow_html=True)
-        elif case["image"] and Path(case["image"]).exists():
-            st.markdown('<div class="image-stage">', unsafe_allow_html=True)
-            st.image(case["image"], width="stretch")
-            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.info("No image file is attached to this demonstration case.")
-        zoom, fit, reset = st.columns(3)
-        with zoom:
-            st.button("Zoom", key=f"review-zoom-{case_id}")
-        with fit:
-            st.button("Fit to screen", key=f"review-fit-{case_id}")
-        with reset:
-            st.button("Reset", key=f"review-reset-{case_id}")
-        st.toggle("Grad-CAM / attention", key=f"review-gradcam-{case_id}")
-        st.caption("Attention map unavailable until model integration.")
-        st.caption("Viewer controls are frontend placeholders until an imaging viewer is connected.")
+            st.info("No image file is attached to this case.")
+        st.caption("X-ray submitted by the user.")
     with right:
         render_ai_panel(case)
 
+    if case["status"] == STATUS_REVIEWED:
+        st.markdown("### Clinical review")
+        st.markdown(f"**Assessment**\n\n{case.get('assessment') or 'Not recorded'}")
+        st.markdown(f"**Clinical notes**\n\n{case.get('comments') or 'Not recorded'}")
+        st.markdown(f"**Final impression**\n\n{case.get('final_impression') or 'Not recorded'}")
+        st.markdown(f"**Recommendation**\n\n{case.get('recommendation') or 'Not recorded'}")
+        st.markdown(f"**Reviewed by:** {case.get('reviewed_by') or 'Not recorded'}")
+        st.markdown(f"**Review date:** {case.get('review_date') or 'Not recorded'}")
+        return
+
     st.markdown("### Doctor review")
-    assessment = st.text_area("Assessment", value=case["assessment"] or "", height=90, key=f"review-assessment-{case_id}")
-    comments = st.text_area("Clinical notes", value=case["comments"] or "", height=130, key=f"review-notes-{case_id}")
+    assessment = st.text_area("Assessment", value=case.get("assessment") or "", height=90, key=f"review-assessment-{case_id}")
+    comments = st.text_area("Clinical notes", value=case.get("comments") or "", height=130, key=f"review-notes-{case_id}")
     final_impression = st.text_area("Final impression", value=case.get("final_impression") or "", height=100, key=f"review-impression-{case_id}")
     recommendation = st.text_area("Recommendation / next step", value=case.get("recommendation") or "", height=90, key=f"review-recommendation-{case_id}")
+
     if comments.strip():
         extracted = extract_notes_locally(comments)
         with st.expander("Documentation extraction preview", expanded=True):
@@ -1156,7 +1197,7 @@ def render_case_review(case_id):
             st.markdown(f"**Location:** {extracted.get('location') or 'Not identified'}")
             st.markdown(f"**Finding:** {extracted.get('finding') or 'Not identified'}")
             st.markdown(f"**Recommendation:** {extracted.get('recommendation') or 'Not identified'}")
-    st.markdown('<div class="final-impression"><strong>Final impression</strong><br>The clinician-authored conclusion will be shown most prominently in the completed report.</div>', unsafe_allow_html=True)
+
     if st.button("Submit review", type="primary", key=f"submit-review-{case_id}"):
         if not assessment.strip() or not comments.strip() or not final_impression.strip() or not recommendation.strip():
             st.error("Please complete the assessment, clinical notes, final impression, and recommendation before submitting.")
@@ -1166,12 +1207,12 @@ def render_case_review(case_id):
             case["final_impression"] = final_impression.strip()
             case["recommendation"] = recommendation.strip()
             case["review_date"] = datetime.now().strftime("%d %b %Y")
-            case["status"] = "Reviewed"
+            case["status"] = STATUS_REVIEWED
             case["reviewed_by"] = st.session_state.user_name
+            st.session_state.review_success_case = case["id"]
             st.session_state.selected_case = None
             st.session_state.doctor_section = "Reviewed Cases"
             st.rerun()
-
 
 def main():
     configure_page()
@@ -1187,13 +1228,15 @@ def main():
             st.markdown(f"**{st.session_state.user_name}**")
             st.markdown(f'<span class="role-chip">{st.session_state.role}</span>', unsafe_allow_html=True)
             st.markdown("---")
-            st.caption("Session-only demo data")
             st.caption("No diagnosis is made by this prototype.")
             st.markdown("---")
+            render_reset_cases("user")
+
             if st.button("Sign out", key="user-sign-out"):
                 st.session_state.authenticated = False
                 st.session_state.role = None
                 st.session_state.user_name = None
+                st.session_state.user_email = None
                 st.session_state.selected_case = None
                 st.session_state.open_user_case = None
                 st.rerun()
