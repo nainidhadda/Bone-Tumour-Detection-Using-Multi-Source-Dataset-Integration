@@ -30,23 +30,17 @@ MODEL_TRANSFORM = transforms.Compose([
     ),
 ])
 # ============================================
-# LOAD RADIMAGENET RESNET50 MODEL
+# LOAD TRAINED BONE TUMOR MODEL
 # ============================================
-
-RADIMAGENET_PATH = (
-    PROJECT_ROOT
-    / "models"
-    / "RadImageNet_ResNet50.pt"
-)
-
 
 @st.cache_resource
 def load_ai_model():
 
-    # Create ResNet50 architecture
+    # Create the same ResNet50 architecture
+    # used during training
     model = models.resnet50(weights=None)
 
-    # Binary classification layer
+    # Binary classification:
     # 0 = Normal
     # 1 = Tumor
     model.fc = nn.Linear(
@@ -54,60 +48,18 @@ def load_ai_model():
         out_features=2
     )
 
-    # ----------------------------------------
-    # Load original RadImageNet weights
-    # ----------------------------------------
-
-    rad_checkpoint = torch.load(
-        RADIMAGENET_PATH,
-        map_location="cpu"
-    )
-
-    prefix_map = {
-        "backbone.0.": "conv1.",
-        "backbone.1.": "bn1.",
-        "backbone.4.": "layer1.",
-        "backbone.5.": "layer2.",
-        "backbone.6.": "layer3.",
-        "backbone.7.": "layer4.",
-    }
-
-    mapped_state_dict = {}
-
-    for key, value in rad_checkpoint.items():
-
-        for old_prefix, new_prefix in prefix_map.items():
-
-            if key.startswith(old_prefix):
-
-                new_key = (
-                    new_prefix
-                    + key[len(old_prefix):]
-                )
-
-                mapped_state_dict[new_key] = value
-                break
-
-    # Load RadImageNet backbone
-    model.load_state_dict(
-        mapped_state_dict,
-        strict=False
-    )
-
-    # ----------------------------------------
-    # Load our trained bone-tumor checkpoint
-    # ----------------------------------------
-
-    trained_checkpoint = torch.load(
+    # Load our trained checkpoint
+    checkpoint = torch.load(
         MODEL_PATH,
         map_location="cpu"
     )
 
+    # Load all trained parameters
     model.load_state_dict(
-        trained_checkpoint["model_state_dict"]
+        checkpoint["model_state_dict"]
     )
 
-    # Move model to CPU/GPU
+    # Move model to available device
     model = model.to(DEVICE)
 
     # Evaluation mode
