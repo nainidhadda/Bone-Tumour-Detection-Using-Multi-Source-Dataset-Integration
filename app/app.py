@@ -171,16 +171,56 @@ def demo_image_path():
     return str(images[0]) if images else None
  
  
-def mock_ai_analysis():
-    # TODO: replace this function with the selected model's inference adapter.
+def ai_analysis(image):
+    """
+    Run the trained ResNet50 model on an uploaded X-ray.
+    """
+
+    # Convert uploaded image to RGB
+    image = image.convert("RGB")
+
+    # Apply the same preprocessing used during testing
+    image_tensor = MODEL_TRANSFORM(image)
+
+    # Add batch dimension
+    image_tensor = image_tensor.unsqueeze(0)
+
+    # Move image to the same device as the model
+    image_tensor = image_tensor.to(DEVICE)
+
+    # Run inference
+    with torch.no_grad():
+        outputs = AI_MODEL(image_tensor)
+
+    # Convert model outputs to probabilities
+    probabilities = torch.softmax(outputs, dim=1)
+
+    # Get predicted class
+    predicted_class = torch.argmax(
+        probabilities,
+        dim=1
+    ).item()
+
+    # Get confidence
+    confidence = probabilities[0, predicted_class].item()
+
+    # Convert class number to readable result
+    if predicted_class == 1:
+        prediction = "Tumor detected — professional review required"
+    else:
+        prediction = "No tumor detected — professional review required"
+
     return {
-        "ai_prediction": "Preliminary finding requires professional review",
-        "ai_confidence": "Mock result — connect selected model before research use",
+        "ai_prediction": prediction,
+        "ai_confidence": f"{confidence * 100:.2f}% model confidence",
     }
  
  
 def make_demo_cases():
-    mock_result = mock_ai_analysis()
+    mock_result = {
+    "ai_prediction": "Demo case — upload an X-ray to run the trained model",
+    "ai_confidence": "Model inference is available for uploaded X-rays",
+}
     return [
         {
             "id": "BW-2401",
