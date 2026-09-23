@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import re
+import io
 
 import torch
 import torch.nn as nn
@@ -40,6 +41,26 @@ def load_bonewise_model():
     model.eval()
 
     return model
+def predict_xray(image_bytes):
+    model = load_bonewise_model()
+
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    tensor = MODEL_TRANSFORM(image).unsqueeze(0).to(DEVICE)
+
+    with torch.no_grad():
+        output = model(tensor)
+        probabilities = torch.softmax(output, dim=1)[0]
+
+    predicted_class = int(torch.argmax(probabilities).item())
+    confidence = float(probabilities[predicted_class].item())
+
+    label = "Cancer / Tumor" if predicted_class == 1 else "Normal"
+
+    return {
+        "label": label,
+        "class": predicted_class,
+        "confidence": confidence,
+    }    
 DISCLAIMER = (
     "This application is an AI-assisted research prototype. AI output is intended "
     "to support professional review and is not a medical diagnosis."
