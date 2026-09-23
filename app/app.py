@@ -1,10 +1,41 @@
 from datetime import datetime
 from pathlib import Path
 import re
-
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODEL_PATH = PROJECT_ROOT / "models" / "resnet50_radimagenet_layer3_layer4_best.pth"
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+MODEL_TRANSFORM = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
+@st.cache_resource
+def load_bonewise_model():
+    model = models.resnet50(weights=None)
+
+    model.fc = nn.Linear(2048, 2)
+
+    checkpoint = torch.load(
+        MODEL_PATH,
+        map_location=DEVICE
+    )
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(DEVICE)
+    model.eval()
+
+    return model
 DISCLAIMER = (
     "This application is an AI-assisted research prototype. AI output is intended "
     "to support professional review and is not a medical diagnosis."
