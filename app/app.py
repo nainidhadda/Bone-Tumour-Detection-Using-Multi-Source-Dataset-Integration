@@ -995,7 +995,7 @@ def render_case_review(case_id):
         st.caption("Attention map unavailable until model integration.")
         st.caption("Viewer controls are frontend placeholders until an imaging viewer is connected.")
     with right:
-        render_ai_panel()
+        render_ai_panel(case)
 
     st.markdown("### Doctor review")
     assessment = st.text_area("Assessment", value=case["assessment"] or "", height=90, key=f"review-assessment-{case_id}")
