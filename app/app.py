@@ -1,10 +1,12 @@
 from datetime import datetime
 from pathlib import Path
 import re
+
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
+
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,8 @@ MODEL_TRANSFORM = transforms.Compose([
         std=[0.229, 0.224, 0.225]
     )
 ])
+
+
 @st.cache_resource
 def load_bonewise_model():
     model = models.resnet50(weights=None)
