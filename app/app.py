@@ -597,12 +597,27 @@ def render_user():
 
     st.markdown("## Submit an X-ray")
     st.caption("PNG, JPG, and JPEG files are supported.")
+
     uploader_key = f"xray-upload-{st.session_state.uploader_version}"
-    upload = st.file_uploader("Choose an X-ray image", type=["png", "jpg", "jpeg"], label_visibility="collapsed", key=uploader_key)
+
+    upload = st.file_uploader(
+        "Choose an X-ray image",
+        type=["png", "jpg", "jpeg"],
+        label_visibility="collapsed",
+        key=uploader_key,
+    )
+
     if upload:
         st.image(upload, caption="Selected X-ray", width=420)
+
         if st.button("Submit X-ray", type="primary", key="submit-xray"):
             case_id = next_case_id()
+
+            image_bytes = upload.getvalue()
+
+            # Run the trained Bonewise model
+            prediction = predict_xray(image_bytes)
+
             st.session_state.cases.append(
                 {
                     "id": case_id,
@@ -617,17 +632,27 @@ def render_user():
                     "submitted": datetime.now().strftime("%d %b %Y"),
                     "status": "Pending doctor review",
                     "image": None,
-                    "image_bytes": upload.getvalue(),
+                    "image_bytes": image_bytes,
                     "assessment": None,
                     "comments": None,
                     "final_impression": None,
                     "recommendation": None,
                     "review_date": None,
                     "reviewed_by": None,
+
+                    # AI prediction
+                    "ai_prediction": prediction["label"],
+                    "ai_confidence": prediction["confidence"],
                 }
             )
+
             st.session_state.uploader_version += 1
-            st.success(f"Your X-ray has been received. Case ID: {case_id}. You can track its status below.")
+
+            st.success(
+                f"Your X-ray has been received. Case ID: {case_id}. "
+                "You can track its status below."
+            )
+
             st.rerun()
 
     st.markdown("## Previous cases")
