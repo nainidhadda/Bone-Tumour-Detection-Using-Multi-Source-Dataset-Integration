@@ -1,10 +1,122 @@
 from datetime import datetime
 from pathlib import Path
- 
+
 import streamlit as st
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
  
  
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# ============================================
+# AI MODEL CONFIGURATION
+# ============================================
+
+MODEL_PATH = PROJECT_ROOT / "models" / "resnet50_radimagenet_layer3_layer4_best.pth"
+
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
+MODEL_INPUT_SIZE = 224
+
+MODEL_TRANSFORM = transforms.Compose([
+    transforms.Resize((MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    ),
+])
+# ============================================
+# LOAD RADIMAGENET RESNET50 MODEL
+# ============================================
+
+RADIMAGENET_PATH = (
+    PROJECT_ROOT
+    / "models"
+    / "RadImageNet_ResNet50.pt"
+)
+
+
+@st.cache_resource
+def load_ai_model():
+
+    # Create ResNet50 architecture
+    model = models.resnet50(weights=None)
+
+    # Binary classification layer
+    # 0 = Normal
+    # 1 = Tumor
+    model.fc = nn.Linear(
+        in_features=2048,
+        out_features=2
+    )
+
+    # ----------------------------------------
+    # Load original RadImageNet weights
+    # ----------------------------------------
+
+    rad_checkpoint = torch.load(
+        RADIMAGENET_PATH,
+        map_location="cpu"
+    )
+
+    prefix_map = {
+        "backbone.0.": "conv1.",
+        "backbone.1.": "bn1.",
+        "backbone.4.": "layer1.",
+        "backbone.5.": "layer2.",
+        "backbone.6.": "layer3.",
+        "backbone.7.": "layer4.",
+    }
+
+    mapped_state_dict = {}
+
+    for key, value in rad_checkpoint.items():
+
+        for old_prefix, new_prefix in prefix_map.items():
+
+            if key.startswith(old_prefix):
+
+                new_key = (
+                    new_prefix
+                    + key[len(old_prefix):]
+                )
+
+                mapped_state_dict[new_key] = value
+                break
+
+    # Load RadImageNet backbone
+    model.load_state_dict(
+        mapped_state_dict,
+        strict=False
+    )
+
+    # ----------------------------------------
+    # Load our trained bone-tumor checkpoint
+    # ----------------------------------------
+
+    trained_checkpoint = torch.load(
+        MODEL_PATH,
+        map_location="cpu"
+    )
+
+    model.load_state_dict(
+        trained_checkpoint["model_state_dict"]
+    )
+
+    # Move model to CPU/GPU
+    model = model.to(DEVICE)
+
+    # Evaluation mode
+    model.eval()
+
+    return model
+
+
+AI_MODEL = load_ai_model()
 DISCLAIMER = (
     "This application is an AI-assisted research prototype. AI output is intended "
     "to support professional review and is not a medical diagnosis."
