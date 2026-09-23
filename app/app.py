@@ -60,6 +60,7 @@ def ensure_model_exists():
             MODEL_URL,
             MODEL_PATH
         )
+     ensure_model_exists()
 @st.cache_resource
 def load_ai_model():
 
