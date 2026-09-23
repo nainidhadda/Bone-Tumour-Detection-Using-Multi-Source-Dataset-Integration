@@ -15,6 +15,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 MODEL_PATH = PROJECT_ROOT / "models" / "resnet50_radimagenet_layer3_layer4_best.pth"
 
+MODEL_URL = (
+    "https://github.com/nainidhadda/"
+    "Bone-Tumour-Detection-Using-Multi-Source-Dataset-Integration/"
+    "releases/download/v1.0-model/"
+    "resnet50_radimagenet_layer3_layer4_best.pth"
+)
+
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
@@ -32,7 +39,27 @@ MODEL_TRANSFORM = transforms.Compose([
 # ============================================
 # LOAD TRAINED BONE TUMOR MODEL
 # ============================================
+def ensure_model_exists():
+    """
+    Download the trained model from the GitHub Release
+    if it is not already available locally.
+    """
 
+    if MODEL_PATH.exists():
+        return
+
+    import urllib.request
+
+    MODEL_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with st.spinner("Loading AI model for the first time..."):
+        urllib.request.urlretrieve(
+            MODEL_URL,
+            MODEL_PATH
+        )
 @st.cache_resource
 def load_ai_model():
 
