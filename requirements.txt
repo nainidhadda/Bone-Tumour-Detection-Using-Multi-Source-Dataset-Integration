@@ -1,4 +1,4 @@
-# Recommended Python version: 3.10 or 3.11
+Recommended Python version: 3.10 or 3.11
 numpy
 pandas
 matplotlib
@@ -10,3 +10,5 @@ tensorflow
 imbalanced-learn
 jupyter
 streamlit
+torch
+torchvision
